@@ -2,8 +2,9 @@
 
 A two-task partner activity, loosely based on the Robbers Cave experiment. Partners first compete at Tic-Tac-Toe, then cooperate on building a twelve-cup red Solo cup tower. After each task, each partner privately rates how they feel about the other on a 1–5 scale. The teacher dashboard shows how each student's rating changed from the competition task to the cooperation task.
 
-Developed by Eric E Castro, Psychology Department, St Ignatius College Prep, San Francisco, CA.
+Converted from the Google Form "Perceived likability."
 
+Developed by Eric E Castro, Psychology Department, St Ignatius College Prep, San Francisco, CA.
 
 ## Files
 
@@ -12,14 +13,14 @@ Developed by Eric E Castro, Psychology Department, St Ignatius College Prep, San
 | `index.html` | Student page |
 | `config.js` | The one place to paste the Apps Script URL and an optional session code |
 | `Code.gs` | Apps Script backend that writes to a Google Sheet |
-| `dashboard.html` | Teacher dashboard (teacher key required) |
+| `dashboard.html` | Teacher dashboard (dashboard key required) |
 
 ## One-time setup
 
 1. **Create the Sheet.** Make a new Google Sheet, for example "Perceived Likability Responses."
 2. **Add the script.** In the Sheet, go to Extensions > Apps Script. Replace the default code with `Code.gs`, then save.
 3. **Create the tab.** Choose `setup` in the function dropdown and click Run. Authorize when asked. This creates a "Responses" tab with headers.
-4. **Set the teacher key.** In Apps Script, go to Project Settings (gear) > Script properties > Add script property. Name it `TEACHER_KEY`. Use a long random string that only you know. Do not put this key in the repository.
+4. **Create the dashboard key.** In Apps Script, choose `setDashboardKey` in the function menu and click Run. Copy the key it shows. Do not put the key in the repository. Running `setDashboardKey` again makes a new key, and the old one stops working.
 5. **Deploy.** Click Deploy > New deployment > type "Web app."
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -51,8 +52,9 @@ Your links will be:
 
 - No names, emails or class periods are collected.
 - Students never see results, and their partner cannot see their answers.
-- Anyone with the student link can submit a response. Only someone with the teacher key can read the data.
-- The teacher key is entered on the dashboard and is not stored by the page. If you bookmark the dashboard with `?tk=` in the URL, that key is saved in your browser history, so do not share that link.
+- Anyone with the student link can submit a response. Only someone with the dashboard key can read the data.
+- The dashboard key is typed into the dashboard's password box. It is kept for the current browser tab only, unless you tick "Remember the key on this device." Forget key clears it. The key is never placed in the page address.
+- The dashboard is marked `noindex`, so search engines should not list it. The page itself contains no results; they come from the Apps Script only after the key is entered.
 
 ## Updating after a change to Code.gs
 
