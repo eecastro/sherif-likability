@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="author" content="Eric E Castro, Psychology Department, St Ignatius College Prep">
 <title>Likability Dashboard</title>
 <style>
 :root{--bg:#f6f6f4;--card:#ffffff;--fg:#1d1d1b;--muted:#5f6368;--accent:#1a5fb4;--border:#c9c9c4;--err:#b00020;--bar:#1a5fb4;--up:#1e7b34;--down:#b00020;}
@@ -16,10 +19,17 @@ h2{font-size:1.1rem;margin:0 0 8px;}
 .muted{color:var(--muted);font-size:.92rem;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin:16px 0;}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.spacer{flex:1;}
 input,select,button{font:inherit;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--fg);}
-input{flex:1 1 220px;min-width:0;}
+input[type=password]{flex:1 1 240px;min-width:0;}
 button{background:var(--accent);color:#fff;border:0;font-weight:600;cursor:pointer;}
 button.secondary{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+button.plain{background:transparent;color:var(--fg);border:1px solid var(--border);font-weight:400;}
+#connect{max-width:560px;}
+#connect form{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 10px;}
+#connect label.check{display:flex;gap:8px;align-items:center;font-size:.9rem;color:var(--muted);}
+#connect ol{padding-left:1.2em;color:var(--muted);font-size:.92rem;margin:12px 0 0;}
+#key-err{color:var(--err);font-weight:600;margin-top:8px;}
 #status{min-height:1.4em;margin:8px 0 0;}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
 .metric{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;}
@@ -34,6 +44,7 @@ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);whit
 th{font-weight:600;color:var(--muted);}
 td.num{text-align:right;font-variant-numeric:tabular-nums;}
 .up{color:var(--up);font-weight:600;} .down{color:var(--down);font-weight:600;}
+select{min-height:38px;}
 </style>
 </head>
 <body>
@@ -41,36 +52,52 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;}
   <h1>Likability dashboard</h1>
   <p class="muted"><strong>Change</strong> = a student's rating of their partner after the cooperation tower minus their rating after the competition game. Positive means they liked the partner more after cooperating. Only students with both ratings count toward the change.</p>
 
-  <section class="card">
-    <div class="row">
-      <input id="tk" type="password" autocomplete="off" placeholder="Teacher key">
-      <button id="load" type="button">Load responses</button>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <label for="sess" class="muted">Session</label>
-      <select id="sess" disabled><option value="">All sessions (aggregated)</option></select>
+  <section id="connect" class="card" hidden>
+    <h2>Connect to your Sheet</h2>
+    <p class="muted">Enter the dashboard key from your Google Sheet's Apps Script.</p>
+    <form id="key-form">
+      <label for="key" class="muted" style="width:100%">Dashboard key</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="Dashboard key" required>
+      <button type="submit">Connect</button>
+    </form>
+    <label class="check"><input type="checkbox" id="remember"> Remember the key on this device</label>
+    <p id="key-err" hidden></p>
+    <ol>
+      <li>In the Sheet, open <b>Extensions › Apps Script</b>.</li>
+      <li>Choose <code>setDashboardKey</code> in the function menu and click <b>Run</b>. Copy the key it shows.</li>
+      <li>If you just updated <code>Code.gs</code>, redeploy it first: <b>Deploy › Manage deployments › Edit › New version</b>.</li>
+    </ol>
+  </section>
+
+  <div id="dash" hidden>
+    <div class="row" style="margin:16px 0">
+      <label class="muted" for="sess">Session</label>
+      <select id="sess"><option value="">All sessions (aggregated)</option></select>
+      <div class="spacer"></div>
+      <button class="plain" type="button" id="refresh">Refresh</button>
+      <button class="plain" type="button" id="signout">Forget key</button>
     </div>
     <p id="status" class="muted" role="status"></p>
-  </section>
 
-  <section id="out" hidden>
-    <div class="metrics" id="metrics"></div>
+    <div id="out" hidden>
+      <div class="metrics" id="metrics"></div>
 
-    <section class="card">
-      <h2>Distribution of change</h2>
-      <div id="hist" class="hist"></div>
-      <p id="histNote" class="muted"></p>
-    </section>
+      <section class="card">
+        <h2>Distribution of change</h2>
+        <div id="hist" class="hist"></div>
+        <p id="histNote" class="muted"></p>
+      </section>
 
-    <section class="card">
-      <div class="row" style="justify-content:space-between">
-        <h2 style="margin:0">Every rating, one row per student</h2>
-        <button id="csv" class="secondary" type="button">Download CSV</button>
-      </div>
-      <p class="muted">Partner 1 and Partner 2 are the two students in a group. "Rater" is the student giving the rating; "Partner" is the student they rated. Group numbers repeat across sessions, so always read the Session column.</p>
-      <div class="scroll"><table id="tbl"></table></div>
-    </section>
-  </section>
+      <section class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Every rating, one row per student</h2>
+          <button id="csv" class="secondary" type="button">Download CSV</button>
+        </div>
+        <p class="muted">Partner 1 and Partner 2 are the two students in a group. "Rater" is the student giving the rating; "Partner" is the student they rated. Group numbers repeat across sessions, so always read the Session column.</p>
+        <div class="scroll"><table id="tbl"></table></div>
+      </section>
+    </div>
+  </div>
 </main>
 
 <script src="config.js"></script>
@@ -80,15 +107,89 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;}
   var cfg = window.APP_CONFIG || {};
   var $ = function (id) { return document.getElementById(id); };
   var configured = !!cfg.apiUrl && cfg.apiUrl.indexOf('PASTE_') < 0;
+  var KEY_STORE = 'likability-dash-key';
   var ROWS = [];
   var PAIRS = [];
 
-  var urlKey = new URLSearchParams(location.search).get('tk');
-  if (urlKey) $('tk').value = urlKey;
+  /* ---------- Key storage: this tab only by default; "remember" keeps it on this device ---------- */
+  function getKey() {
+    var v = null;
+    try { v = sessionStorage.getItem(KEY_STORE) || localStorage.getItem(KEY_STORE); } catch (e) {}
+    return v;
+  }
+  function saveKey(key, remember) {
+    try { sessionStorage.setItem(KEY_STORE, key); } catch (e) {}
+    try { if (remember) localStorage.setItem(KEY_STORE, key); else localStorage.removeItem(KEY_STORE); } catch (e) {}
+  }
+  function forgetKey() {
+    try { sessionStorage.removeItem(KEY_STORE); } catch (e) {}
+    try { localStorage.removeItem(KEY_STORE); } catch (e) {}
+  }
 
+  /* ---------- Screens ---------- */
+  function showConnect(msg) {
+    $('dash').hidden = true;
+    $('connect').hidden = false;
+    $('key-err').hidden = !msg;
+    $('key-err').textContent = msg || '';
+    $('key').focus();
+  }
+  function showDash() {
+    $('connect').hidden = true;
+    $('dash').hidden = false;
+  }
   function setStatus(text, bad) {
     $('status').textContent = text;
     $('status').style.color = bad ? 'var(--err)' : '';
+  }
+
+  /* ---------- Loading ---------- */
+  function load() {
+    if (!configured) { showConnect('config.js has no Web app URL yet.'); return; }
+    var key = getKey();
+    if (!key) { showConnect(); return; }
+    showDash();
+    setStatus('Loading…');
+    fetch(cfg.apiUrl + '?view=dashboard&key=' + encodeURIComponent(key), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.ok) {
+          if (json.error === 'bad-key' || json.error === 'no-key') {
+            forgetKey();
+            showConnect(json.message);
+            return null;
+          }
+          throw new Error(json.message || json.error || 'Could not load.');
+        }
+        ROWS = json.rows || [];
+        fillSessions();
+        $('out').hidden = false;
+        setStatus(ROWS.length + ' response rows loaded.');
+        render();
+        return null;
+      })
+      .catch(function (err) {
+        if (!ROWS.length) showConnect('Could not reach the Sheet: ' + err.message);
+        else setStatus('Could not refresh: ' + err.message, true);
+      });
+  }
+
+  function fillSessions() {
+    var sel = $('sess');
+    var cur = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    var names = [];
+    ROWS.forEach(function (r) {
+      var s = String(r.Session);
+      if (names.indexOf(s) < 0) names.push(s);
+    });
+    names.sort().forEach(function (n) {
+      var o = document.createElement('option');
+      o.value = n;
+      o.textContent = n;
+      sel.appendChild(o);
+    });
+    sel.value = names.indexOf(cur) >= 0 ? cur : '';
   }
 
   function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
@@ -113,45 +214,8 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;}
   }
   function hasVal(v) { return v !== '' && v !== null && v !== undefined; }
 
-  function load() {
-    if (!configured) return setStatus('config.js has no Web app URL yet.', true);
-    var tk = $('tk').value.trim();
-    if (!tk) return setStatus('Enter the teacher key.', true);
-    setStatus('Loading…');
-    fetch(cfg.apiUrl + '?action=summary&tk=' + encodeURIComponent(tk), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (json) {
-        if (!json.ok) throw new Error(json.error || 'Could not load.');
-        ROWS = json.rows || [];
-        fillSessions();
-        $('out').hidden = false;
-        setStatus(ROWS.length + ' response rows loaded.');
-        render();
-      })
-      .catch(function (err) { setStatus('Could not load: ' + err.message, true); });
-  }
-
-  function fillSessions() {
-    var sel = $('sess');
-    var cur = sel.value;
-    while (sel.options.length > 1) sel.remove(1);
-    var names = [];
-    ROWS.forEach(function (r) {
-      var s = String(r.Session);
-      if (names.indexOf(s) < 0) names.push(s);
-    });
-    names.sort().forEach(function (n) {
-      var o = document.createElement('option');
-      o.value = n;
-      o.textContent = n;
-      sel.appendChild(o);
-    });
-    sel.value = names.indexOf(cur) >= 0 ? cur : '';
-    sel.disabled = false;
-  }
-
   /**
-   * Builds one record per rater (session, group, seat), then one "directed pair" per rater.
+   * One record per rater (session, group, seat), then one "directed pair" per rater.
    * Partner 1 rates Partner 2 and Partner 2 rates Partner 1.
    */
   function analyze(rows, sessionFilter) {
@@ -305,14 +369,31 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;}
     document.body.appendChild(a);
     a.click();
     a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   }
 
-  $('load').addEventListener('click', load);
-  $('tk').addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+  /* ---------- Wiring ---------- */
+  $('key-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var k = $('key').value.trim();
+    if (!k) return;
+    saveKey(k, $('remember').checked);
+    $('key').value = '';
+    $('key-err').hidden = true;
+    load();
+  });
+  $('signout').addEventListener('click', function () {
+    forgetKey();
+    ROWS = [];
+    PAIRS = [];
+    $('out').hidden = true;
+    showConnect();
+  });
+  $('refresh').addEventListener('click', load);
   $('sess').addEventListener('change', function () { if (ROWS.length) render(); });
   $('csv').addEventListener('click', downloadCsv);
-  if (!configured) setStatus('config.js has no Web app URL yet.', true);
-  if (urlKey && configured) load();
+
+  load();
 })();
 </script>
 </body>
