@@ -2,7 +2,8 @@
 
 A two-task partner activity, loosely based on the Robbers Cave experiment. Partners first compete at Tic-Tac-Toe, then cooperate on building a twelve-cup red Solo cup tower. After each task, each partner privately rates how they feel about the other on a 1–5 scale. The teacher dashboard shows how each student's rating changed from the competition task to the cooperation task.
 
-Converted from the Google Form "Perceived likability."
+Developed by Eric E Castro, Psychology Department, St Ignatius College Prep, San Francisco, CA.
+
 
 ## Files
 
