@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Likability Dashboard</title>
+<style>
+:root{--bg:#f6f6f4;--card:#ffffff;--fg:#1d1d1b;--muted:#5f6368;--accent:#1a5fb4;--border:#c9c9c4;--err:#b00020;--bar:#1a5fb4;--up:#1e7b34;--down:#b00020;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151515;--card:#202020;--fg:#eeeeee;--muted:#aaaaaa;--accent:#7aa7ff;--border:#444444;--err:#ff8a8a;--bar:#7aa7ff;--up:#7ddc8f;--down:#ff8a8a;}}
+:root[data-theme="dark"]{--bg:#151515;--card:#202020;--fg:#eeeeee;--muted:#aaaaaa;--accent:#7aa7ff;--border:#444444;--err:#ff8a8a;--bar:#7aa7ff;--up:#7ddc8f;--down:#ff8a8a;}
+[hidden]{display:none !important;}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+main{max-width:960px;margin:0 auto;padding:16px;}
+h1{font-size:1.6rem;margin:8px 0 4px;}
+h2{font-size:1.1rem;margin:0 0 8px;}
+.muted{color:var(--muted);font-size:.92rem;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin:16px 0;}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+input,select,button{font:inherit;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--fg);}
+input{flex:1 1 220px;min-width:0;}
+button{background:var(--accent);color:#fff;border:0;font-weight:600;cursor:pointer;}
+button.secondary{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+#status{min-height:1.4em;margin:8px 0 0;}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;}
+.metric .v{display:block;font-size:1.5rem;font-weight:700;}
+.metric .l{display:block;color:var(--muted);font-size:.85rem;}
+.hist{display:grid;grid-template-columns:44px 1fr 40px;gap:6px 8px;align-items:center;font-variant-numeric:tabular-nums;}
+.hist .bar{background:var(--bar);height:16px;border-radius:4px;min-width:0;}
+.hist .zero{background:var(--muted);}
+.scroll{overflow-x:auto;}
+table{border-collapse:collapse;width:100%;font-size:.92rem;margin:8px 0;}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;}
+th{font-weight:600;color:var(--muted);}
+td.num{text-align:right;font-variant-numeric:tabular-nums;}
+.up{color:var(--up);font-weight:600;} .down{color:var(--down);font-weight:600;}
+</style>
+</head>
+<body>
+<main>
+  <h1>Likability dashboard</h1>
+  <p class="muted"><strong>Change</strong> = a student's rating of their partner after the cooperation tower minus their rating after the competition game. Positive means they liked the partner more after cooperating. Only students with both ratings count toward the change.</p>
+
+  <section class="card">
+    <div class="row">
+      <input id="tk" type="password" autocomplete="off" placeholder="Teacher key">
+      <button id="load" type="button">Load responses</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label for="sess" class="muted">Session</label>
+      <select id="sess" disabled><option value="">All sessions (aggregated)</option></select>
+    </div>
+    <p id="status" class="muted" role="status"></p>
+  </section>
+
+  <section id="out" hidden>
+    <div class="metrics" id="metrics"></div>
+
+    <section class="card">
+      <h2>Distribution of change</h2>
+      <div id="hist" class="hist"></div>
+      <p id="histNote" class="muted"></p>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Every rating, one row per student</h2>
+        <button id="csv" class="secondary" type="button">Download CSV</button>
+      </div>
+      <p class="muted">Partner 1 and Partner 2 are the two students in a group. "Rater" is the student giving the rating; "Partner" is the student they rated. Group numbers repeat across sessions, so always read the Session column.</p>
+      <div class="scroll"><table id="tbl"></table></div>
+    </section>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  'use strict';
+  var cfg = window.APP_CONFIG || {};
+  var $ = function (id) { return document.getElementById(id); };
+  var configured = !!cfg.apiUrl && cfg.apiUrl.indexOf('PASTE_') < 0;
+  var ROWS = [];
+  var PAIRS = [];
+
+  var urlKey = new URLSearchParams(location.search).get('tk');
+  if (urlKey) $('tk').value = urlKey;
+
+  function setStatus(text, bad) {
+    $('status').textContent = text;
+    $('status').style.color = bad ? 'var(--err)' : '';
+  }
+
+  function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
+  function median(a) {
+    if (!a.length) return null;
+    var s = a.slice().sort(function (x, y) { return x - y; });
+    var m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+  function sd(a) {
+    if (a.length < 2) return null;
+    var m = mean(a);
+    return Math.sqrt(a.reduce(function (x, y) { return x + (y - m) * (y - m); }, 0) / (a.length - 1));
+  }
+  function fmt(x, d) { return (x === null || x === undefined || isNaN(x)) ? '—' : x.toFixed(d === undefined ? 1 : d); }
+  function signed(x) { return (x === null || isNaN(x)) ? '—' : (x > 0 ? '+' : '') + x.toFixed(1); }
+  function el(tag, text, cls) {
+    var e = document.createElement(tag);
+    if (text !== undefined && text !== null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+  function hasVal(v) { return v !== '' && v !== null && v !== undefined; }
+
+  function load() {
+    if (!configured) return setStatus('config.js has no Web app URL yet.', true);
+    var tk = $('tk').value.trim();
+    if (!tk) return setStatus('Enter the teacher key.', true);
+    setStatus('Loading…');
+    fetch(cfg.apiUrl + '?action=summary&tk=' + encodeURIComponent(tk), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.ok) throw new Error(json.error || 'Could not load.');
+        ROWS = json.rows || [];
+        fillSessions();
+        $('out').hidden = false;
+        setStatus(ROWS.length + ' response rows loaded.');
+        render();
+      })
+      .catch(function (err) { setStatus('Could not load: ' + err.message, true); });
+  }
+
+  function fillSessions() {
+    var sel = $('sess');
+    var cur = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    var names = [];
+    ROWS.forEach(function (r) {
+      var s = String(r.Session);
+      if (names.indexOf(s) < 0) names.push(s);
+    });
+    names.sort().forEach(function (n) {
+      var o = document.createElement('option');
+      o.value = n;
+      o.textContent = n;
+      sel.appendChild(o);
+    });
+    sel.value = names.indexOf(cur) >= 0 ? cur : '';
+    sel.disabled = false;
+  }
+
+  /**
+   * Builds one record per rater (session, group, seat), then one "directed pair" per rater.
+   * Partner 1 rates Partner 2 and Partner 2 rates Partner 1.
+   */
+  function analyze(rows, sessionFilter) {
+    var raters = {};
+    rows.forEach(function (r) {
+      var session = String(r.Session);
+      if (sessionFilter && session !== sessionFilter) return;
+      var group = Number(r.Group);
+      var seat = Number(r.Seat);
+      var k = session + '|' + group + '|' + seat;
+      if (!raters[k]) raters[k] = { session: session, group: group, seat: seat, comp: null, coop: null };
+      if (r.Task === 'Competition') raters[k].comp = r;
+      else if (r.Task === 'Cooperation') raters[k].coop = r;
+    });
+
+    var groups = {};
+    Object.keys(raters).forEach(function (k) {
+      var rec = raters[k];
+      var gk = rec.session + '|' + rec.group;
+      if (!groups[gk]) groups[gk] = { session: rec.session, group: rec.group, 1: null, 2: null };
+      groups[gk][rec.seat] = rec;
+    });
+
+    var pairs = [];
+    Object.keys(groups).forEach(function (gk) {
+      var g = groups[gk];
+      [1, 2].forEach(function (seat) {
+        var rater = g[seat];
+        var comp = rater && rater.comp && hasVal(rater.comp.Partner_Likeability) ? Number(rater.comp.Partner_Likeability) : null;
+        var coop = rater && rater.coop && hasVal(rater.coop.Partner_Likeability) ? Number(rater.coop.Partner_Likeability) : null;
+        pairs.push({
+          session: g.session,
+          group: g.group,
+          rater: seat,
+          partner: seat === 1 ? 2 : 1,
+          comp: comp,
+          coop: coop,
+          delta: (comp !== null && coop !== null) ? coop - comp : null,
+          points: rater && rater.comp && hasVal(rater.comp.TicTacToe_Points) ? Number(rater.comp.TicTacToe_Points) : null,
+          tower: rater && rater.coop ? String(rater.coop.Tower_Success || '') : ''
+        });
+      });
+    });
+
+    pairs.sort(function (a, b) {
+      if (a.session !== b.session) return a.session < b.session ? -1 : 1;
+      if (a.group !== b.group) return a.group - b.group;
+      return a.rater - b.rater;
+    });
+    return pairs;
+  }
+
+  function render() {
+    var f = $('sess').value;
+    PAIRS = analyze(ROWS, f);
+
+    var complete = PAIRS.filter(function (p) { return p.delta !== null; });
+    var deltas = complete.map(function (p) { return p.delta; });
+    var comps = PAIRS.filter(function (p) { return p.comp !== null; }).map(function (p) { return p.comp; });
+    var coops = PAIRS.filter(function (p) { return p.coop !== null; }).map(function (p) { return p.coop; });
+    var up = deltas.filter(function (d) { return d > 0; }).length;
+    var same = deltas.filter(function (d) { return d === 0; }).length;
+    var down = deltas.filter(function (d) { return d < 0; }).length;
+    var towerYes = PAIRS.filter(function (p) { return p.tower === 'Yes'; }).length;
+    var towerAll = PAIRS.filter(function (p) { return p.tower === 'Yes' || p.tower === 'No'; }).length;
+    var oneMissing = PAIRS.filter(function (p) { return (p.comp === null) !== (p.coop === null); }).length;
+    var notStarted = PAIRS.filter(function (p) { return p.comp === null && p.coop === null; }).length;
+
+    var m = $('metrics');
+    m.innerHTML = '';
+    function metric(value, label) {
+      var box = el('div', null, 'metric');
+      box.appendChild(el('span', value, 'v'));
+      box.appendChild(el('span', label, 'l'));
+      m.appendChild(box);
+    }
+    metric(String(complete.length), 'Ratings with both tasks');
+    metric(signed(mean(deltas)), 'Mean change (coop − comp)');
+    metric(fmt(median(deltas)), 'Median change');
+    metric(fmt(sd(deltas)), 'SD of change');
+    metric(up + ' / ' + same + ' / ' + down, 'Liked more / same / less');
+    metric(fmt(mean(comps)), 'Mean liking after competition');
+    metric(fmt(mean(coops)), 'Mean liking after cooperation');
+    metric(towerAll ? Math.round(100 * towerYes / towerAll) + '%' : '—', 'Students reporting tower success');
+    metric(String(oneMissing), 'Waiting on the second task');
+    metric(String(notStarted), 'No responses yet');
+
+    // Histogram of change, -4 to +4
+    var hist = $('hist');
+    hist.innerHTML = '';
+    var bins = [];
+    for (var v = -4; v <= 4; v++) {
+      bins.push({ v: v, n: deltas.filter(function (d) { return d === v; }).length });
+    }
+    var max = Math.max.apply(null, bins.map(function (b) { return b.n; }).concat([1]));
+    bins.forEach(function (b) {
+      hist.appendChild(el('div', (b.v > 0 ? '+' : '') + b.v));
+      var track = el('div');
+      var bar = el('div', null, 'bar' + (b.v === 0 ? ' zero' : ''));
+      bar.style.width = (100 * b.n / max) + '%';
+      track.appendChild(bar);
+      hist.appendChild(track);
+      hist.appendChild(el('div', String(b.n)));
+    });
+    $('histNote').textContent = complete.length
+      ? 'Changes are whole numbers because each rating is 1–5. Negative bars mean less liking after cooperation.'
+      : 'No student has both ratings yet.';
+
+    // Table
+    var tbl = $('tbl');
+    tbl.innerHTML = '';
+    var head = el('tr');
+    ['Session', 'Group', 'Rater', 'Partner', 'Comp. (Tic-Tac-Toe)', 'Coop. (Tower)', 'Change', 'Tic-Tac-Toe pts', 'Tower OK?'].forEach(function (h) {
+      head.appendChild(el('th', h));
+    });
+    tbl.appendChild(head);
+    PAIRS.forEach(function (p) {
+      var tr = el('tr');
+      tr.appendChild(el('td', p.session));
+      tr.appendChild(el('td', String(p.group), 'num'));
+      tr.appendChild(el('td', 'Partner ' + p.rater));
+      tr.appendChild(el('td', 'Partner ' + p.partner));
+      tr.appendChild(el('td', p.comp === null ? '—' : String(p.comp), 'num'));
+      tr.appendChild(el('td', p.coop === null ? '—' : String(p.coop), 'num'));
+      var ch = el('td', p.delta === null ? '—' : signed(p.delta), 'num');
+      if (p.delta !== null && p.delta > 0) ch.className = 'num up';
+      if (p.delta !== null && p.delta < 0) ch.className = 'num down';
+      tr.appendChild(ch);
+      tr.appendChild(el('td', p.points === null ? '—' : String(p.points), 'num'));
+      tr.appendChild(el('td', p.tower || '—'));
+      tbl.appendChild(tr);
+    });
+    if (!PAIRS.length) tbl.appendChild(el('tr', 'No responses for this session yet.'));
+  }
+
+  function csvCell(v) {
+    var s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function downloadCsv() {
+    var cols = ['session', 'group', 'rater_seat', 'partner_seat', 'comp_rating', 'coop_rating', 'change', 'tictactoe_points', 'tower_success'];
+    var lines = [cols.join(',')];
+    PAIRS.forEach(function (p) {
+      lines.push([p.session, p.group, p.rater, p.partner, p.comp, p.coop, p.delta, p.points, p.tower].map(csvCell).join(','));
+    });
+    var blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'likability-' + ($('sess').value || 'all-sessions') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  $('load').addEventListener('click', load);
+  $('tk').addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+  $('sess').addEventListener('change', function () { if (ROWS.length) render(); });
+  $('csv').addEventListener('click', downloadCsv);
+  if (!configured) setStatus('config.js has no Web app URL yet.', true);
+  if (urlKey && configured) load();
+})();
+</script>
+</body>
+</html>
